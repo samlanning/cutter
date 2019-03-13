@@ -94,12 +94,31 @@ DisassemblyWidget::DisassemblyWidget(MainWindow *main, QAction *action)
     // Event filter to intercept double clicks in the textbox
     mDisasTextEdit->viewport()->installEventFilter(this);
 
-    // Set Disas context menu
-    mDisasTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(mDisasTextEdit, SIGNAL(customContextMenuRequested(const QPoint &)),
-            this, SLOT(showDisasContextMenu(const QPoint &)));
+    // Setup signals
+    setupSignals();
 
+    // Setup the widget shortcuts
+    setupShortcuts();
+}
 
+void DisassemblyWidget::toggleSync()
+{
+    QString windowTitle = tr("Disassembly");
+    seekable->toggleSynchronization();
+    if (seekable->isSynchronized()) {
+        setWindowTitle(windowTitle);
+    } else {
+        setWindowTitle(windowTitle + CutterSeekable::tr(" (unsynced)"));
+    }
+}
+
+QWidget *DisassemblyWidget::getTextWidget()
+{
+    return mDisasTextEdit;
+}
+
+void DisassemblyWidget::setupShortcuts()
+{
     // Space to switch to graph
     QShortcut *graphShortcut = new QShortcut(QKeySequence(Qt::Key_Space), this);
     graphShortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -108,6 +127,44 @@ DisassemblyWidget::DisassemblyWidget(MainWindow *main, QAction *action)
         Core()->triggerRaisePrioritizedMemoryWidget();
     });
 
+    // Dirty
+    QShortcut *shortcut_escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    shortcut_escape->setContext(Qt::WidgetShortcut);
+    connect(shortcut_escape, SIGNAL(activated()), this, SLOT(seekPrev()));
+
+#define ADD_SHORTCUT(ksq, slot) { \
+    QShortcut *s = new QShortcut((ksq), this); \
+    s->setContext(Qt::WidgetShortcut); \
+    connect(s, &QShortcut::activated, this, (slot)); \
+}
+    ADD_SHORTCUT(QKeySequence(Qt::Key_J), [this]() {
+        moveCursorRelative(false, false);
+    })
+    ADD_SHORTCUT(QKeySequence::MoveToNextLine, [this]() {
+        moveCursorRelative(false, false);
+    })
+    ADD_SHORTCUT(QKeySequence(Qt::Key_K), [this]() {
+        moveCursorRelative(true, false);
+    })
+    ADD_SHORTCUT(QKeySequence::MoveToPreviousLine, [this]() {
+        moveCursorRelative(true, false);
+    })
+    ADD_SHORTCUT(QKeySequence::MoveToNextPage, [this]() {
+        moveCursorRelative(false, true);
+    })
+    ADD_SHORTCUT(QKeySequence::MoveToPreviousPage, [this]() {
+        moveCursorRelative(true, true);
+    })
+    ADD_SHORTCUT(QKeySequence(Qt::CTRL + Qt::Key_Plus), &DisassemblyWidget::zoomIn)
+    ADD_SHORTCUT(QKeySequence(Qt::CTRL + Qt::Key_Minus), &DisassemblyWidget::zoomOut)
+#undef ADD_SHORTCUT
+}
+
+void DisassemblyWidget::setupSignals()
+{
+    mDisasTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(mDisasTextEdit, SIGNAL(customContextMenuRequested(const QPoint &)),
+            this, SLOT(showDisasContextMenu(const QPoint &)));
 
     connect(mDisasScrollArea, SIGNAL(scrollLines(int)), this, SLOT(scrollInstructions(int)));
     connect(mDisasScrollArea, SIGNAL(disassemblyResized()), this, SLOT(updateMaxLines()));
@@ -152,64 +209,16 @@ DisassemblyWidget::DisassemblyWidget(MainWindow *main, QAction *action)
 
     connect(mCtxMenu, SIGNAL(copy()), mDisasTextEdit, SLOT(copy()));
 
-    // Dirty
-    QShortcut *shortcut_escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
-    shortcut_escape->setContext(Qt::WidgetShortcut);
-    connect(shortcut_escape, SIGNAL(activated()), this, SLOT(seekPrev()));
-
     mCtxMenu->addSeparator();
     syncIt.setText(tr("Sync/unsync offset"));
     mCtxMenu->addAction(&syncIt);
     connect(&syncIt, SIGNAL(triggered(bool)), this, SLOT(toggleSync()));
     connect(seekable, &CutterSeekable::seekableSeekChanged, this, &DisassemblyWidget::on_seekChanged);
-
-#define ADD_SHORTCUT(ksq, slot) { \
-    QShortcut *s = new QShortcut((ksq), this); \
-    s->setContext(Qt::WidgetShortcut); \
-    connect(s, &QShortcut::activated, this, (slot)); \
-}
-    ADD_SHORTCUT(QKeySequence(Qt::Key_J), [this]() {
-        moveCursorRelative(false, false);
-    })
-    ADD_SHORTCUT(QKeySequence::MoveToNextLine, [this]() {
-        moveCursorRelative(false, false);
-    })
-    ADD_SHORTCUT(QKeySequence(Qt::Key_K), [this]() {
-        moveCursorRelative(true, false);
-    })
-    ADD_SHORTCUT(QKeySequence::MoveToPreviousLine, [this]() {
-        moveCursorRelative(true, false);
-    })
-    ADD_SHORTCUT(QKeySequence::MoveToNextPage, [this]() {
-        moveCursorRelative(false, true);
-    })
-    ADD_SHORTCUT(QKeySequence::MoveToPreviousPage, [this]() {
-        moveCursorRelative(true, true);
-    })
-    ADD_SHORTCUT(QKeySequence(Qt::CTRL + Qt::Key_Plus), &DisassemblyWidget::zoomIn)
-    ADD_SHORTCUT(QKeySequence(Qt::CTRL + Qt::Key_Minus), &DisassemblyWidget::zoomOut)
-#undef ADD_SHORTCUT
-}
-
-void DisassemblyWidget::toggleSync()
-{
-    QString windowTitle = tr("Disassembly");
-    seekable->toggleSynchronization();
-    if (seekable->isSynchronized()) {
-        setWindowTitle(windowTitle);
-    } else {
-        setWindowTitle(windowTitle + CutterSeekable::tr(" (unsynced)"));
-    }
-}
-
-QWidget *DisassemblyWidget::getTextWidget()
-{
-    return mDisasTextEdit;
 }
 
 void DisassemblyWidget::refreshDisasm(RVA offset)
 {
-    if(!disasmRefresh->attemptRefresh(offset == RVA_INVALID ? nullptr : new RVA(offset))) {
+    if (!disasmRefresh->attemptRefresh(offset == RVA_INVALID ? nullptr : new RVA(offset))) {
         return;
     }
 

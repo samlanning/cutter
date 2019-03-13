@@ -72,6 +72,16 @@ private:
     void setupFonts();
     void setupColors();
 
+    /**
+     * @brief Setup the widget keyboard shortcuts
+     */
+    void setupShortcuts();
+
+    /**
+     * @brief Setup the signals so the widget can handle external events
+     */
+    void setupSignals();
+
     void updateCursorPosition();
 
     void connectCursorPositionChanged(bool disconnect);
