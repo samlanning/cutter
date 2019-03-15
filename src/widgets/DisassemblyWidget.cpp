@@ -5,6 +5,7 @@
 #include "common/Configuration.h"
 #include "common/Helpers.h"
 #include "common/TempConfig.h"
+#include "common/CachedFontMetrics.h"
 
 #include <QScrollBar>
 #include <QJsonArray>
@@ -12,6 +13,7 @@
 #include <QVBoxLayout>
 #include <QRegularExpression>
 #include <QTextBlockUserData>
+#include <QPainter>
 
 
 class DisassemblyTextBlockUserData: public QTextBlockUserData
@@ -34,6 +36,7 @@ static DisassemblyTextBlockUserData *getUserData(const QTextBlock &block)
 
     return static_cast<DisassemblyTextBlockUserData *>(userData);
 }
+
 
 DisassemblyWidget::DisassemblyWidget(MainWindow *main, QAction *action)
     :   CutterDockWidget(main, action)
@@ -60,7 +63,18 @@ DisassemblyWidget::DisassemblyWidget(MainWindow *main, QAction *action)
 
     setWindowTitle(tr("Disassembly"));
 
-    QVBoxLayout *layout = new QVBoxLayout();
+    // Instantiate the window layout
+    auto *layout = new QHBoxLayout();
+
+    // Constants
+    const int LEFTPANEL_DEFAULT_WIDTH = 100;
+
+    // Setup the left frame that contains breakpoints and jumps
+    leftPanel = new DisassemblyLeftPanel(this);
+    leftPanel->setMinimumWidth(LEFTPANEL_DEFAULT_WIDTH); // TODO Allow smaller resize
+    layout->addWidget(leftPanel);
+
+    // Setup the disassembly content
     layout->addWidget(mDisasTextEdit);
     layout->setMargin(0);
     mDisasScrollArea->viewport()->setLayout(layout);
@@ -81,7 +95,6 @@ DisassemblyWidget::DisassemblyWidget(MainWindow *main, QAction *action)
     updateMaxLines();
 
     mDisasTextEdit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    mDisasTextEdit->setFont(Config()->getFont());
     mDisasTextEdit->setReadOnly(true);
     mDisasTextEdit->setLineWrapMode(QPlainTextEdit::WidgetWidth);
     // wrapping breaks readCurrentDisassemblyOffset() at the moment :-(
@@ -115,6 +128,16 @@ void DisassemblyWidget::toggleSync()
 QWidget *DisassemblyWidget::getTextWidget()
 {
     return mDisasTextEdit;
+}
+
+CachedFontMetrics *DisassemblyWidget::getFontMetrics()
+{
+    return fontMetrics;
+}
+
+QList<DisassemblyLine> DisassemblyWidget::getLines()
+{
+    return lines;
 }
 
 void DisassemblyWidget::setupShortcuts()
@@ -241,11 +264,13 @@ void DisassemblyWidget::refreshDisasm(RVA offset)
     int horizontalScrollValue = mDisasTextEdit->horizontalScrollBar()->value();
     mDisasTextEdit->setLockScroll(true); // avoid flicker
 
-    QList<DisassemblyLine> disassemblyLines;
+    // Retrieve disassembly lines
     {
         TempConfig tempConfig;
-        tempConfig.set("scr.color", COLOR_MODE_16M);
-        disassemblyLines = Core()->disassembleLines(topOffset, maxLines);
+        tempConfig
+        .set("scr.color", COLOR_MODE_16M)
+        .set("asm.lines", false);
+        lines = Core()->disassembleLines(topOffset, maxLines);
     }
 
     connectCursorPositionChanged(true);
@@ -253,7 +278,7 @@ void DisassemblyWidget::refreshDisasm(RVA offset)
     mDisasTextEdit->document()->clear();
     QTextCursor cursor(mDisasTextEdit->document());
     QTextBlockFormat regular = cursor.blockFormat();
-    for (const DisassemblyLine &line : disassemblyLines) {
+    for (const DisassemblyLine &line : lines) {
         if (line.offset < topOffset) { // overflow
             break;
         }
@@ -269,8 +294,8 @@ void DisassemblyWidget::refreshDisasm(RVA offset)
         cursor.setBlockFormat(regular);
     }
 
-    if (!disassemblyLines.isEmpty()) {
-        bottomOffset = disassemblyLines[qMin(disassemblyLines.size(), maxLines) - 1].offset;
+    if (!lines.isEmpty()) {
+        bottomOffset = lines[qMin(lines.size(), maxLines) - 1].offset;
         if (bottomOffset < topOffset) {
             bottomOffset = RVA_MAX;
         }
@@ -292,6 +317,9 @@ void DisassemblyWidget::refreshDisasm(RVA offset)
 
     mDisasTextEdit->setLockScroll(false);
     mDisasTextEdit->horizontalScrollBar()->setValue(horizontalScrollValue);
+
+    // Refresh the left panel (trigger paintEvent)
+    leftPanel->update();
 }
 
 
@@ -681,6 +709,11 @@ void DisassemblyWidget::colorsUpdatedSlot()
 void DisassemblyWidget::setupFonts()
 {
     mDisasTextEdit->setFont(Config()->getFont());
+    if (fontMetrics) {
+        delete fontMetrics;
+        fontMetrics = nullptr;
+    }
+    fontMetrics = new CachedFontMetrics(this, font());
 }
 
 
@@ -754,3 +787,86 @@ void DisassemblyWidget::seekPrev()
 {
     Core()->seekPrev();
 }
+
+/*********************
+ * Left panel
+ *********************/
+DisassemblyLeftPanel::DisassemblyLeftPanel(DisassemblyWidget *disas)
+{
+    this->disas = disas;
+}
+
+void DisassemblyLeftPanel::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+
+    RVA currentOffset = Core()->getOffset(); // TODO Use the seekable from DisassemblyWidget
+    int rightOffset = size().rwidth();
+    int lineHeight = disas->getFontMetrics()->height() + 3; // TODO Remove the +3 it's temporary because current lines suck
+    QColor brtrueColor = ConfigColor("graph.true");
+    QPainter p(this);
+    QPen pen(brtrueColor, 2, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin);
+    p.setPen(pen);
+
+    QList<DisassemblyLine> lines = disas->getLines();
+
+    // Precompute pixel position of the arrows
+    // TODO This can probably be done in another loop
+    QMap<RVA, int> linesPixPosition;
+    int i = 0;
+    int tmpBaseOffset = lineHeight + 2; // TODO Remove me it's temporary because current lines do not start at the top
+    for (auto l : lines) {
+        linesPixPosition[l.offset] = i * lineHeight + tmpBaseOffset;
+        i++;
+    }
+
+    // Draw the lines
+    // TODO Use better var names
+    QPolygon arrow;
+    int direction;
+    int lineFinalHeight;
+    int lineOffset = 10;
+    for (auto l : lines) {
+        // Skip until we reach a line that jumps to a destination
+        if (l.arrow == 0) {
+            continue;
+        }
+
+        // Compute useful variables
+        if (l.arrow > currentOffset) {
+            direction = 1;
+        } else {
+            direction = -1;
+        }
+
+        bool endVisible = true;
+        int currentLineYPos = linesPixPosition[l.offset];
+        lineFinalHeight = linesPixPosition.value(l.arrow, -1);
+
+        if (lineFinalHeight == -1) {
+            if (direction == 1) {
+                lineFinalHeight = 0;
+            } else {
+                lineFinalHeight = size().height();
+            }
+            endVisible = false;
+        }
+        lineOffset += 10; // TODO Should be improved
+
+        // Draw the lines
+        p.drawLine(rightOffset, currentLineYPos, rightOffset - lineOffset, currentLineYPos);
+        p.drawLine(rightOffset - lineOffset, currentLineYPos, rightOffset - lineOffset, lineFinalHeight);
+
+        if (endVisible) {
+            p.drawLine(rightOffset - lineOffset, lineFinalHeight, rightOffset, lineFinalHeight);
+
+            // Draw the arrow
+            arrow.clear();
+            arrow.append(QPoint(rightOffset - 3, lineFinalHeight + 3));
+            arrow.append(QPoint(rightOffset - 3, lineFinalHeight - 3));
+            arrow.append(QPoint(rightOffset, lineFinalHeight));
+        }
+        p.drawConvexPolygon(arrow);
+    }
+}
+

@@ -184,9 +184,13 @@ struct RAsmPluginDescription {
     QString license;
 };
 
+/**
+ * A structure to represent a disassembly line
+ */
 struct DisassemblyLine {
-    RVA offset;
-    QString text;
+    RVA offset;   /** The offset of the disassembly line */
+    QString text; /** The disassembly text */
+    RVA arrow;    /** The jump destination */
 };
 
 struct BinClassBaseClassDescription {
