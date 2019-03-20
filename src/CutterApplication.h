@@ -14,7 +14,7 @@ class CutterApplication : public QApplication
     Q_OBJECT
 
 public:
-    CutterApplication(int &argc, char **argv);
+    CutterApplication(int &argc, char **argv, bool test = false);
     ~CutterApplication();
 
     MainWindow *getMainWindow()

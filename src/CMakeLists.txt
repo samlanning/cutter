@@ -38,8 +38,6 @@ project(Cutter VERSION "${CUTTER_VERSION_FULL}")
 
 set(CMAKE_CXX_STANDARD 11)
 
-include_directories(core widgets common plugins)
-
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -147,13 +145,13 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
     set_source_files_properties(${BINDINGS_SOURCE} PROPERTIES COMPILE_FLAGS -w)
 endif()
 
-
-add_executable(Cutter ${UI_FILES} ${QRC_FILES} ${SOURCE_FILES} ${HEADER_FILES} ${BINDINGS_SOURCE})
-
-target_link_libraries(Cutter Qt5::Core Qt5::Widgets Qt5::Gui Qt5::Svg Qt5::Network)
-target_link_libraries(Cutter ${RADARE2_LIBRARIES})
+list(REMOVE_ITEM SOURCE_FILES Main.cpp)
+add_library(CutterLib OBJECT ${UI_FILES} ${QRC_FILES} ${SOURCE_FILES} ${HEADER_FILES} ${BINDINGS_SOURCE})
+target_include_directories(CutterLib PUBLIC . core widgets common plugins)
+target_link_libraries(CutterLib Qt5::Core Qt5::Widgets Qt5::Gui Qt5::Svg Qt5::Network)
+target_link_libraries(CutterLib ${RADARE2_LIBRARIES})
 if(CUTTER_ENABLE_PYTHON)
-    target_link_libraries(Cutter ${PYTHON_LIBRARIES})
+    target_link_libraries(CutterLib ${PYTHON_LIBRARIES})
     if(CUTTER_ENABLE_PYTHON_BINDINGS)
         target_link_libraries(Cutter Shiboken2::libshiboken PySide2::pyside2)
 
@@ -173,10 +171,12 @@ if(CUTTER_ENABLE_PYTHON)
 endif()
 
 if(CUTTER_ENABLE_PYTHON AND CUTTER_ENABLE_JUPYTER AND CUTTER_ENABLE_QTWEBENGINE)
-    target_link_libraries(Cutter Qt5::WebEngineWidgets)
+    target_link_libraries(CutterLib Qt5::WebEngineWidgets)
 endif()
+
+add_executable(Cutter Main.cpp)
+target_link_libraries(Cutter CutterLib)
 
 if(CUTTER_ENABLE_TESTS)
     add_subdirectory(test)
 endif()
-
