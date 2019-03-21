@@ -14,6 +14,7 @@
 #include <QRegularExpression>
 #include <QTextBlockUserData>
 #include <QPainter>
+#include <QSplitter>
 
 
 class DisassemblyTextBlockUserData: public QTextBlockUserData
@@ -64,23 +65,27 @@ DisassemblyWidget::DisassemblyWidget(MainWindow *main, QAction *action)
     setWindowTitle(tr("Disassembly"));
 
     // Instantiate the window layout
-    auto *layout = new QHBoxLayout();
-
-    // Constants
-    const int LEFTPANEL_DEFAULT_WIDTH = 100;
+    auto *splitter = new QSplitter;
 
     // Setup the left frame that contains breakpoints and jumps
     leftPanel = new DisassemblyLeftPanel(this);
-    leftPanel->setMinimumWidth(LEFTPANEL_DEFAULT_WIDTH); // TODO Allow smaller resize
-    layout->addWidget(leftPanel);
+    splitter->addWidget(leftPanel);
 
     // Setup the disassembly content
+    auto *layout = new QHBoxLayout;
     layout->addWidget(mDisasTextEdit);
     layout->setMargin(0);
     mDisasScrollArea->viewport()->setLayout(layout);
-    mDisasScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    splitter->addWidget(mDisasScrollArea);
 
-    setWidget(mDisasScrollArea);
+    // Set current widget to the splitted layout we just created
+    setWidget(splitter);
+
+    // Resize properly
+    QList<int> sizes;
+    sizes.append(3);
+    sizes.append(1); // TODO Is it the best way to resize this properly?
+    splitter->setSizes(sizes);
 
     setAllowedAreas(Qt::AllDockWidgetAreas);
 
@@ -802,19 +807,19 @@ void DisassemblyLeftPanel::paintEvent(QPaintEvent *event)
 
     RVA currentOffset = Core()->getOffset(); // TODO Use the seekable from DisassemblyWidget
     int rightOffset = size().rwidth();
-    int lineHeight = disas->getFontMetrics()->height() + 3; // TODO Remove the +3 it's temporary because current lines suck
-    QColor brtrueColor = ConfigColor("graph.true");
+    int lineHeight = disas->getFontMetrics()->height() + 1; // TODO Remove the +1 it's temporary because current lines suck
+    QColor arrowColor = ConfigColor("flow");
     QPainter p(this);
-    QPen pen(brtrueColor, 2, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin);
+    QPen pen(arrowColor, 2, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin);
     p.setPen(pen);
 
     QList<DisassemblyLine> lines = disas->getLines();
 
     // Precompute pixel position of the arrows
-    // TODO This can probably be done in another loop
+    // TODO This can probably be done in another loop for performance purposes
     QMap<RVA, int> linesPixPosition;
     int i = 0;
-    int tmpBaseOffset = lineHeight + 2; // TODO Remove me it's temporary because current lines do not start at the top
+    int tmpBaseOffset = lineHeight + 5; // TODO Remove me it's temporary because current lines do not start at the top
     for (auto l : lines) {
         linesPixPosition[l.offset] = i * lineHeight + tmpBaseOffset;
         i++;
@@ -851,7 +856,6 @@ void DisassemblyLeftPanel::paintEvent(QPaintEvent *event)
             }
             endVisible = false;
         }
-        lineOffset += 10; // TODO Should be improved
 
         // Draw the lines
         p.drawLine(rightOffset, currentLineYPos, rightOffset - lineOffset, currentLineYPos);
@@ -867,6 +871,9 @@ void DisassemblyLeftPanel::paintEvent(QPaintEvent *event)
             arrow.append(QPoint(rightOffset, lineFinalHeight));
         }
         p.drawConvexPolygon(arrow);
+
+        // Shift next jump line
+        lineOffset += 10;
     }
 }
 

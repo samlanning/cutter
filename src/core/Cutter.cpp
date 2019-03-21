@@ -39,7 +39,6 @@ namespace RJsonKey {
     R_JSON_KEY(edges);
     R_JSON_KEY(enabled);
     R_JSON_KEY(entropy);
-    R_JSON_KEY(fail);
     R_JSON_KEY(fcn_addr);
     R_JSON_KEY(fcn_name);
     R_JSON_KEY(fields);
