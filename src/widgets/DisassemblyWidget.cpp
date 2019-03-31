@@ -810,7 +810,7 @@ void DisassemblyLeftPanel::paintEvent(QPaintEvent *event)
     int lineHeight = disas->getFontMetrics()->height() + 1; // TODO Remove the +1 it's temporary because current lines suck
     QColor arrowColor = ConfigColor("flow");
     QPainter p(this);
-    QPen pen(arrowColor, 2, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin);
+    QPen pen(arrowColor, 1, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin);
     p.setPen(pen);
 
     QList<DisassemblyLine> lines = disas->getLines();
